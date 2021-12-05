@@ -48,37 +48,37 @@ birthweight_data =
 ### Model building - Backward elimination  
 Start with all predictors in the model and eliminate one by one until all variables left in the model are significant. 
 ```{r}
-birthweight_lm1 <- lm(bwt ~ ., data = birthweight_data)
+birthweight_lm1 = lm(bwt ~ ., data = birthweight_data)
 anova(birthweight_lm1)
 ```
 
 Remove **momage** since the p-value is very high - 0.98
 ```{r, eval=FALSE}
-birthweight_lm2 <- lm(bwt ~ . - momage, data = birthweight_data)
+birthweight_lm2 = lm(bwt ~ . - momage, data = birthweight_data)
 anova(birthweight_lm2)
 ```
 
 Remove **malform** because the p-value is 0.933
 ```{r, eval=FALSE}
-birthweight_lm3 <- lm(bwt ~ . - momage - malform, data = birthweight_data)
+birthweight_lm3 = lm(bwt ~ . - momage - malform, data = birthweight_data)
 anova(birthweight_lm3)
 ```
 
 Remove **menarche**
 ```{r, eval=FALSE}
-birthweight_lm4 <- lm(bwt ~ . - momage - malform - menarche, data = birthweight_data)
+birthweight_lm4 = lm(bwt ~ . - momage - malform - menarche, data = birthweight_data)
 anova(birthweight_lm4)
 ```
 
 Remove **ppwt**
 ```{r, eval=FALSE}
-birthweight_lm5 <- lm(bwt ~ . - momage - malform - menarche - ppwt, data = birthweight_data)
+birthweight_lm5 = lm(bwt ~ . - momage - malform - menarche - ppwt, data = birthweight_data)
 anova(birthweight_lm5)
 ```
 
 Remove **wtgain**
 ```{r}
-birthweight_lm6 <- lm(bwt ~ . - momage - malform - menarche - ppwt - wtgain, data = birthweight_data)
+birthweight_lm6 = lm(bwt ~ . - momage - malform - menarche - ppwt - wtgain, data = birthweight_data)
 anova(birthweight_lm6)
 ```
 
@@ -98,7 +98,7 @@ birthweight_data %>%
 * Model 1: length at birth, gestational age  
 * Model 2: head circumference, length, sex, and interactions (including the 3-way interaction)  
 ```{r, warning=FALSE, message=FALSE}
-crossval_df <- 
+crossval_df = 
   crossv_mc(birthweight_data, 100) %>% 
   mutate(
     train = map(train, as_tibble),
@@ -133,4 +133,68 @@ crossval_df %>%
 ```
 
 WE can see from the above plot that the model from the backward elimination method have the smallest RMSE and model 1 with the main effects length at birth and gestational age have the largest RMSE. 
+
+## Problem 2
+Load the 2017 Central Park weather data
+```{r, message=FALSE}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+Simple linear regression with tmax as the response and tmin as the predictor, and are interested in the distribution of two quantities estimated from these data: r^2 and log(beta_0 * beta_1).
+
+Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of these two quantities. 
+
+### Bootstrapping
+```{r}
+bootstrap_models =
+  weather_df %>% 
+  bootstrap(5000, id = "strap_number") %>% 
+  mutate(
+    models = map(strap, ~lm(tmax ~ tmin, data = .x)),
+  )
+```
+
+### R-squared
+```{r}
+r_squared =
+  bootstrap_models %>% 
+  mutate(results = map(models, broom::glance)) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  select(strap_number, r.squared)
+```
+
+```{r}
+r_squared %>% 
+  ggplot(aes(x = r.squared)) +
+  geom_density() +
+  labs(title = "Distribution of R-Squared")
+```
+
+From the plot above, we can see that the distribution of R-squared is approximately normal, with a little skew to the left. The mean of R-squared is about **`r round(mean(pull(r_squared, r.squared)))`**.
+
+To find the 95% CI for R^2:
+```{r}
+r_squared_conf = 
+r_squared %>%
+  summarize(
+    ci_lower = quantile(r.squared, 0.025),
+    ci_upper = quantile(r.squared, 0.975)
+  )
+r_squared_conf
+```
+Thus, we are 95% confidant that the true mean R^2 value lies between **`r round(r_squared_conf$ci_lower, 2)`** and **`r round(r_squared_conf$ci_upper, 2)`**.
+
+
+
 
