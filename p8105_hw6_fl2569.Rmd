@@ -156,6 +156,8 @@ Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of 
 
 ### Bootstrapping
 ```{r}
+set.seed(123) #set seed for reproducibility
+
 bootstrap_models =
   weather_df %>% 
   bootstrap(5000, id = "strap_number") %>% 
@@ -195,6 +197,41 @@ r_squared_conf
 ```
 Thus, we are 95% confidant that the true mean R^2 value lies between **`r round(r_squared_conf$ci_lower, 2)`** and **`r round(r_squared_conf$ci_upper, 2)`**.
 
+### log(beta_0 * beta_1)  
+```{r}
+beta_hats =
+  bootstrap_models %>% 
+  mutate(results = map(models, broom::tidy)) %>% 
+  select(strap_number, results) %>% 
+  unnest(results) %>% 
+  select(strap_number, term, estimate) %>% 
+  pivot_wider(
+    names_from = term,
+    values_from = estimate) %>% 
+  rename(intercept = "(Intercept)") %>% 
+  mutate(log_beta_hats = log(intercept * tmin))
+```
 
+Plot the distribution of log(beta_0 * beta_1).
+```{r}
+beta_hats %>% 
+  ggplot(aes(x = log_beta_hats)) +
+  geom_density() +
+  labs(title = "Distribution of log(B_hat_0*B_hat_1)")
+```  
 
+From the plot above, we see that the mean $\log(\hat{\beta}_0 * \hat{\beta}_1)$ value is `r round(mean(beta_hats$log_beta_hats), 2)`. The distribution appears to be approximately normal.
 
+To find the 95% CI interval for log(beta_0 * beta_1):
+```{r}
+beta_conf =
+  beta_hats %>% 
+  summarize(
+    ci_lower = quantile(log_beta_hats, 0.025),
+    ci_upper = quantile(log_beta_hats, 0.975)
+  )
+
+beta_conf
+```
+
+Thus, we are 95% confident that the true mean $\log(\hat{\beta}_0 * \hat{\beta}_1)$ lies between **`r round(beta_conf$ci_lower, 2)`** and **`r round(beta_conf$ci_upper, 2)`**.
