@@ -5,4 +5,132 @@ date: "12/4/2021"
 output: github_document
 ---
 
+Load the required packages.
+```{r, message=FALSE}
+library(tidyverse)
+library(modelr)
+
+knitr::opts_chunk$set(
+  fig.width = 6,
+  fig.asp = 0.6,
+  out.width = "90%"
+)
+
+theme_set(theme_minimal())
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+```
+
+## Problem 1  
+Analyze data to understand the effects of several variables on a child’s birth weight
+
+### Load and clean the data
+```{r}
+birthweight_data =
+  read.csv("./data/birthweight.csv") %>% 
+  mutate(
+    babysex = as.factor(babysex),
+    babysex = fct_recode(babysex, "male" = "1", "female" = "2"),
+    frace = as.factor(frace),
+    frace = fct_recode(frace, "White" = "1", "Black" = "2", "Asian" = "3", 
+                       "Puerto Rican" = "4", "Other" = "8"),
+    mrace = as.factor(mrace),
+    mrace = fct_recode(mrace, "White" = "1", "Black" = "2", "Asian" = "3", 
+                       "Puerto Rican" = "4")
+  )
+```
+
+### Model building - Backward elimination  
+Start with all predictors in the model and eliminate one by one until all variables left in the model are significant. 
+```{r}
+birthweight_lm1 <- lm(bwt ~ ., data = birthweight_data)
+anova(birthweight_lm1)
+```
+
+Remove **momage** since the p-value is very high - 0.98
+```{r, eval=FALSE}
+birthweight_lm2 <- lm(bwt ~ . - momage, data = birthweight_data)
+anova(birthweight_lm2)
+```
+
+Remove **malform** because the p-value is 0.933
+```{r, eval=FALSE}
+birthweight_lm3 <- lm(bwt ~ . - momage - malform, data = birthweight_data)
+anova(birthweight_lm3)
+```
+
+Remove **menarche**
+```{r, eval=FALSE}
+birthweight_lm4 <- lm(bwt ~ . - momage - malform - menarche, data = birthweight_data)
+anova(birthweight_lm4)
+```
+
+Remove **ppwt**
+```{r, eval=FALSE}
+birthweight_lm5 <- lm(bwt ~ . - momage - malform - menarche - ppwt, data = birthweight_data)
+anova(birthweight_lm5)
+```
+
+Remove **wtgain**
+```{r}
+birthweight_lm6 <- lm(bwt ~ . - momage - malform - menarche - ppwt - wtgain, data = birthweight_data)
+anova(birthweight_lm6)
+```
+
+Note that the p-values for the remaining variables in our model are all less than 0.05. The predictors include baby sex, head circumference, length, mother weight at deliery, family income, father's race, gestational age in weeks, mother height, race, parity, pre-pregnancy bmi, and smoking. 
+
+### Plot of residuals against fitted values 
+```{r warning=FALSE}
+birthweight_data %>% 
+  add_predictions(birthweight_lm6) %>% 
+  add_residuals(birthweight_lm6) %>% 
+  ggplot(aes(x = pred, y = resid)) +
+  geom_point(alpha = 0.3) + 
+  ggtitle("Residuals vs. fitted values")
+```
+
+### Model Comparisons    
+* Model 1: length at birth, gestational age  
+* Model 2: head circumference, length, sex, and interactions (including the 3-way interaction)  
+```{r, warning=FALSE, message=FALSE}
+crossval_df <- 
+  crossv_mc(birthweight_data, 100) %>% 
+  mutate(
+    train = map(train, as_tibble),
+    test = map(test, as_tibble),
+    original_mod = map(train, ~lm(bwt ~ . - momage - malform - menarche - ppwt - wtgain,
+                              data = .x)),
+    mod1 = map(train, ~lm(bwt ~ blength + gaweeks,
+                          data = .x)),
+    mod2 = map(train, ~lm(bwt ~ bhead + blength + babysex + bhead*blength +
+                            bhead*babysex + blength*babysex +
+                            bhead*blength*babysex, data = .x)),
+    
+    rmse_original_mod = map2_dbl(original_mod, test, ~rmse(model = .x, data = .y)),
+    rmse_mod1 = map2_dbl(mod1, test, ~rmse(model = .x, data = .y)),
+    rmse_mod2 = map2_dbl(mod2, test, ~rmse(model = .x, data = .y))
+  )
+```
+
+Compare the RMSE for the models  
+```{r}
+crossval_df %>% 
+  select(starts_with("rmse")) %>% 
+  pivot_longer(
+    everything(),
+    names_to = "model",
+    values_to = "rmse",
+    names_prefix = "rmse_"
+  ) %>% 
+  ggplot(aes(x = model, y = rmse)) +
+  geom_boxplot() +
+  labs(title = "Cross-validated prediction error")
+```
+
+WE can see from the above plot that the model from the backward elimination method have the smallest RMSE and model 1 with the main effects length at birth and gestational age have the largest RMSE. 
 
